@@ -1,0 +1,83 @@
+\documentclass{article}
+\usepackage[sc]{mathpazo}
+\usepackage[T1]    {fontenc }% Allow accented output charachters
+\usepackage[utf8]  {inputenc}% Allow accented input charachters 
+\usepackage        {lmodern }% Modern output font     
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{2}
+\usepackage{url}
+\usepackage[unicode=true,pdfusetitle,
+ bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=2,
+ breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=false]
+ {hyperref}
+\hypersetup{
+ pdfstartview={XYZ null null 1}}
+\usepackage{breakurl}
+
+\begin{document}
+
+<<setup, include=FALSE, cache=FALSE>>=
+library(knitr)
+# set global chunk options
+opts_chunk$set(fig.path='figure/minimal-', fig.align='center', fig.show='hold')
+options(replace.assign=TRUE,width=90)
+@
+
+
+\title{Data analysis \emph{assigment 2}}
+
+
+\author{Gábor Bernát}
+
+\maketitle
+Data analysis. 
+
+\section{Introduction}
+
+\section{Methods}
+
+\subsection{Precision}
+First we handled cleaning the data frame for analysis. 
+
+\subsection{Data munging}
+
+First, download the data as provided in the assigment text:
+<<download,echo=TRUE,eval=TRUE,cache=TRUE, warning=FALSE>>=
+dir.create("data")
+download.file( "https://spark-public.s3.amazonaws.com/dataanalysis/samsungData.rda",
+               "./data/samsungData.rda", method="curl")
+load("./data/samsungData.rda")
+@
+
+The downloaded data set has \Sexpr{dim.data.frame(samsungData)[1]} observations with \Sexpr{dim.data.frame(samsungData)[2]} variables. However, a closer look at the data reveals that there are duplicated columns present in the data:
+
+<<duplicate_columns,echo=TRUE,eval=TRUE,cache=TRUE, warning=FALSE>>=
+# number of duplicated columns
+table(duplicated(lapply(samsungData, summary)))
+# drop duplicated columns
+noDupCol <- samsungData[!duplicated(lapply(samsungData, summary))]
+# test
+table(duplicated(lapply(noDupCol, summary)))
+@
+
+This leaves us with \Sexpr{dim.data.frame(noDupCol)[2]} variables to work with. Now we check for missing data or wrongfully entered data (outliers), for this analysis we have excluded the activity and subject columns because these contain different kind of information (non sensor type):
+
+<<missing_data,echo=TRUE,eval=TRUE,cache=TRUE, warning=FALSE>>=
+# check missing values in form of NA or NAN
+sum(sapply(noDupCol[, !(names(noDupCol) %in% c('activity', 'subject')) ], is.nan))
+sum(sapply(noDupCol[,!(names(noDupCol) %in% c('activity', 'subject'))], is.na))
+
+# check ranges min max 
+mi <- min(sapply(noDupCol[,!(names(noDupCol) %in% c('activity', 'subject'))], min))
+ma <- max(sapply(noDupCol[,!(names(noDupCol) %in% c('activity', 'subject'))], max))
+@
+
+It turns out that the sensor columns are in the interval of \Sexpr{mi} and \Sexpr{ma}, so no measurement outliers can be observed.
+
+\section{Results}
+
+\section{Conclusion}
+
+\end{document}
