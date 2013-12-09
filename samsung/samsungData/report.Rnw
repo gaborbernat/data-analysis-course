@@ -4,6 +4,8 @@
 \usepackage[utf8]  {inputenc}% Allow accented input charachters 
 \usepackage        {lmodern }% Modern output font     
 \usepackage{geometry}
+\usepackage[backend=bibtex, sorting=none]{biblatex}
+\bibliography{references}
 \geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
 \setcounter{secnumdepth}{2}
 \setcounter{tocdepth}{2}
@@ -32,16 +34,19 @@ options(replace.assign=TRUE,width=90)
 \author{Gábor Bernát}
 
 \maketitle
-Data analysis. 
+\tableofcontents
 
 \section{Introduction}
 
+Throughout the last decade mobile phones keep getting smarter and better equipped with high quality sensors, making them more accurate and faster. Therefore it is now possible to turn them to an even smarter device, by automatically performing various tasks for users. Paired with the wide spread of the devices throughout the world any kind of automatation has the potentatiol to turn into years of profit for its user base. A such automation may be to automatically track the movement of its users, and turning on-off various functions at this trigger.
+
+In this analysis we categorize the users current activity into five possible states: standing, sitting,  laying, walk,     walkdown and walkup. As input we use the following sensor information: acceleration and gyroscope (angular acceleration) on 3 directions. Our analysis shows that a simple decision tree based prediction algorithm can achieve a relatively high precision (around 90\%). This suggests that it is quite easy to automate tasks that are triggered by an activity, requiring only a low resource usage as decision trees are simple to implement.
+
 \section{Methods}
 
-\subsection{Precision}
-First we handled cleaning the data frame for analysis. 
+For documenting the project we've used the knitr package \cite{knitr2013}. For creating predictions we've used prediction trees as documented in Brian Ripley's book\cite{tree} and R package. For creating graphs the ggplot2 \cite{ggplot} package has been used together with the ggdendro\cite{ggdendro} package. 
 
-\subsection{Data munging}
+\subsection{Data collection}
 
 First, download the data as provided in the assigment text:
 <<download,echo=TRUE,eval=TRUE,cache=TRUE, warning=FALSE>>=
@@ -51,7 +56,18 @@ download.file( "https://spark-public.s3.amazonaws.com/dataanalysis/samsungData.r
 load("./data/samsungData.rda")
 @
 
-The downloaded data set has \Sexpr{dim.data.frame(samsungData)[1]} observations with \Sexpr{dim.data.frame(samsungData)[2]} variables. However, a closer look at the data reveals that there are duplicated columns present in the data:
+\subsection{Exploratory analysis}
+
+First we handled cleaning the data frame for analysis, and also available at \cite{UCI}. The downloaded data set has \Sexpr{dim.data.frame(samsungData)[1]} observations with \Sexpr{dim.data.frame(samsungData)[2]} variables. Looking into the column names we observe that there are invalid charachters in there, to drop these we'll recreate first the data frame. Then, we'll turn the activity columns member types from character type to factor:
+
+<<drop_invalid,echo=TRUE,eval=TRUE,cache=TRUE, warning=FALSE>>=
+# clean invalid charachters from the data set column names
+samsungData <- data.frame(samsungData)
+# make activity a factor variable
+samsungData$activity <- as.factor(samsungData$activity)
+@
+
+A closer look at the data reveals that there are duplicated columns present in the data:
 
 <<duplicate_columns,echo=TRUE,eval=TRUE,cache=TRUE, warning=FALSE>>=
 # number of duplicated columns
@@ -76,8 +92,136 @@ ma <- max(sapply(noDupCol[,!(names(noDupCol) %in% c('activity', 'subject'))], ma
 
 It turns out that the sensor columns are in the interval of \Sexpr{mi} and \Sexpr{ma}, so no measurement outliers can be observed.
 
+\subsection{Statistical Modeling}
+
+For making prediction from inputs we have used decision trees\cite{tree}. We've choosen this, because it natively allows multiple classes as output (as opposed to the logistic regression) and is easy to implement and use in practice once a decision tree has been constructed. For model selection we have relied on the built in decision tree building package \cite{tree}, by using the task constrained training and evaluation set. To measure ,,goodness'' of a decision tree our measuring function has been the percentage of miss classification. Lower scores are better. This is our \emph{erorr rate}.
+
+Given a decision tree and a data set the miss classification rate is given by the following R function:
+
+\[
+\mbox{miss classification}= \frac{\sum_{i}^{n} A_{i,i}}{\sum_{j}^{n}\sum_{i}^{n} A_{i,j}}, \mbox{ where } A_{i,j} \mbox{ is the classification matrix.}
+\]
+
+<<miss_rate_function,echo=TRUE,eval=TRUE,cache=TRUE, warning=FALSE>>=
+miss.rate <- function(decisionTree, dataSet) {
+  class.pred <- table(predict(decisionTree, dataSet, type="class"), dataSet$activity)
+  miss <- 1-sum(diag(class.pred))/sum(class.pred)
+  r <- list(t=class.pred, miss=miss)
+  return (r)
+}
+@
+
+
+\subsection{Reproducibility} 
+
+For reproducibility we have hosted the documentation (containing all the relevant R code) on the GitHub system\cite{github}.
+
 \section{Results}
+
+\subsection{Select datasets}
+For creating a predictor we'll split the input dataset into three parts:
+
+\begin{itemize}
+\item \emph{training} -- used to create the predictor, 
+\item \emph{evaluation} -- used to fine tune the predictor and to avoid overfitting on the training data set, 
+\item \emph{validation} -- used to tell just how well our created predictor will perform on a new data set.
+\end{itemize}
+
+<<data_sets,echo=TRUE,eval=TRUE,cache=TRUE, warning=FALSE>>=
+trainingSet    <- noDupCol[ noDupCol$subject %in% c(1,3,5,6), 
+                      !(names(noDupCol) %in% c('subject'))]
+evaluationSet  <- noDupCol[ noDupCol$subject %in% c(27,28,29,30),
+                      !(names(noDupCol) %in% c('subject')) ]
+validationSet  <- noDupCol[ noDupCol$subject %in% c(27,28,29,30, 1, 3, 5, 6),
+                           !(names(noDupCol) %in% c('subject')) ]
+@
+For creating the subsets we've used manual splitting based on subjects. We've put in the training set subjects 1, 3, 5 and 6. For evaluation we've used subjects 27, 28, 29, 30. Finally, for validation we've used all other subjects. 
+
+
+\subsection{Building and prunning a decision tree}
+
+Although the training dataset has $500+$ variables building a decision tree results in using just 5 of them, with just 12 decisions to be made, achieving $97\%+$ accuracy on the training data set.
+
+<<tree_create,echo=TRUE,eval=TRUE,cache=TRUE, warning=TRUE>>=
+library(tree)
+decisionTree <- tree(formula=activity ~ . , data=trainingSet)
+summary(decisionTree)
+@
+
+Now of course, some overfitting on the training data set may be observed so we'll use the evaluation data set to cross validate our training operation. We'll prune the origianl decision tree to check how many of the decision give the optimal result on the evaluation data set. For this we'll use the following R function to acquire the miss classifications and visualize these on a plot:
+
+<<prunning,echo=TRUE,eval=TRUE,cache=TRUE, warning=TRUE>>=
+library(ggplot2)
+prunning <- function(decisionTree, dataSet, n) {
+  # iterate over the number of decisions and get miss classification
+  miss=vector()
+  for ( i in 2:n ) {
+    pruned <- prune.tree(decisionTree, best=i)
+    miss = c(miss, miss.rate(pruned, dataSet)$miss)
+  }
+  # create a plot of the miss classification values
+  plot = ggplot(data=data.frame(a=as.factor(2:n), m=miss),aes(a, m)) +
+         geom_bar(stat='identity') +
+         xlab("Decision count in tree") + 
+         ylab("Miss classification rate")+
+         theme(text = element_text(size=10),
+               axis.title.x = element_text(colour = "#999999"), 
+               axis.title.y = element_text(colour = "#999999"))
+  return (list(miss=miss, plot=plot))
+}
+@
+
+On figure \ref{fig:prunning_train} is the miss classification on the training set. Increasing the number of decisions decreases the miss classfication as we fit better and beter the training set.
+<<prunning_train,echo=TRUE,eval=TRUE,cache=TRUE, warning=TRUE, fig.cap="Miss classification for training set. Increasing the number of decisions decreases the miss classfication as we fit better and beter the training set.", fig.height=2.5>>=
+trainPrun <- prunning(decisionTree, trainingSet, 12)
+trainPrun$plot + ggtitle("Training set miss classification ratio")
+# miss classification on the training set
+trainPrun$miss
+@
+
+On figure \ref{fig:prunning_eval} is the miss classification on the evaluation set. There is little difference between 7, 8 or 10+ rules; therefore we have decided to use the lowest number of rules: seven. 
+<<prunning_eval,echo=TRUE,eval=TRUE,cache=TRUE, warning=TRUE, fig.cap="Miss classification for evaluation set. There is little difference between 6 and 12 rules, supporting the overtraining effect of the tree.", fig.height=2.5>>=x`
+evalPrun <- prunning(decisionTree, evaluationSet, 12)
+evalPrun$plot + ggtitle("Evaluation set miss classification rates")
+# miss classification on the evaluation set
+evalPrun$miss
+@
+
+Finally, we have created a decision tree with just the best 10 decisions and made a graphical visualization of it on figure \ref{fig:finalSelect} with the following R code, by using the \emph{ggdendro} and \emph{ggplot2} packages: 
+<<finalSelect,echo=TRUE,eval=TRUE,cache=TRUE, warning=TRUE, fig.cap="The optimal decision tree with 10 decisions to predict activity from mobile sensor information", fig.height=4>>=
+choosenDecisionTree = prune.tree(decisionTree, best=10)
+fitChoosen <- dendro_data(choosenDecisionTree, type="uniform")
+library(ggdendro)
+ggplot() +
+  geom_segment(data=fitChoosen$segments, aes(x=x, y=y, xend=xend, yend=yend)) +
+  geom_text(data=fitChoosen$labels,aes(x=x, y=y, label=label), size=2.5, 
+            vjust=-0.5, color = 'blue') +
+  geom_text(data=fitChoosen$leaf_labels, aes(x=x, y=y, label=label), 
+            color='red', size=3, vjust=1) +
+  ggtitle("A ten rule decision tree for predicting activity from mobile phone sensor data")+
+  theme_dendro()
+@
+
+
+\subsection{Validation}
+To validate our results we have used the reamining samples (not used for either training or evaluation): 
+
+<<validation,echo=TRUE,eval=TRUE,cache=TRUE, warning=TRUE>>=
+valRes <- miss.rate(decisionTree=choosenDecisionTree, dataSet=validationSet)
+valRes
+@
+
+Our miss classification rate is just \Sexpr{valRes$miss}, which is quite good given the simplicity of the statistical model. Looking over the confussion matrix we can see that sitting and standing are the most often confused, which makes sense as in either case the sensors should measure the same thing: ,,stilness''. Walk up and walk are also quite often confussed. The other configuration has a relatively low false positive occurance.
 
 \section{Conclusion}
 
+Our analysis shows that a relatively high accuracy (close to 90\%), may be achieved by using simple decision tree models and just the angular acceleration on the X and Y axis. \ref{fig:finalSelect} shows a simple such decision tree instance. Using information from the Z axis does not improve the accuracy of the decision tree, at best it helps to decide in edge cases.  
+
+Potential pitfalls with our analysis include the hand selection of the subjects to use for training and evaluation. Hence, this is somehow also suggested by the fact that our best evaluation set accuracy is lower than our validation set accuracy. To alleviate this, we may use instead random subject sampling for the data sets, or use other cross validation techniques (k--fold, leave one out and etcetera). 
+
+Another problem may be that when deciding on duplicate columns we kept the first instance. We should try our analysis with either one of them. For increasing the accuracy we may use other statistical models, such as the random forests, or alternatively use further sensor information for the prediction. Of course, validating our results with further measurements, and data sets is also a strong future study chance.
+
+Nevertheless, throughout our analysis we have concluded that decision trees may be a good decision for people wanting to predict mobile phone usage activity from sensor data, if $80--90\%$ accuracy is enough. Decision trees are easy to implement and can be easily done in any platform language, even in some low level hardware language for maximum resource efficiency. 
+
+\printbibliography
 \end{document}
